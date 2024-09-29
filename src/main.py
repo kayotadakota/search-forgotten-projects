@@ -1,5 +1,3 @@
-import asyncio
-import aiohttp
 import sqlite3
 
 from datetime import date
