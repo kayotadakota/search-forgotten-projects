@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date
 from requests import Session
 from constants import (
-    GET_CATALOGUE_HEADERS
+    REQUEST_HEADERS
 )
 
 import logging
@@ -149,13 +149,13 @@ if __name__ == '__main__':
     
     for page in range(1, 5):
         if flag:
-            catalogue = get_catalogue(session, GET_CATALOGUE_HEADERS, page)
+            catalogue = get_catalogue(session, REQUEST_HEADERS, page)
             for title in catalogue:
 
                 if title in tracked_titles:
                     continue
 
-                result = get_title_info(session, GET_CATALOGUE_HEADERS, title)
+                result = get_title_info(session, REQUEST_HEADERS, title)
 
                 if result:
                     titles_info.append(result)
@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
     if debut:
         for title in debut:
-            info = get_title_info(session, GET_CATALOGUE_HEADERS, title)
+            info = get_title_info(session, REQUEST_HEADERS, title)
 
             if info[1] > 500:
                 # Add title's name to the output if the count of bookmarks is greater than 500 
