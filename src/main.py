@@ -11,9 +11,6 @@ from constants import (
 import logging
 logger = logging.getLogger(__name__)
 
-TOTAL_PAGES = None
-TITLES_NAMES = []
-
 
 def get_titles_with_expired_immune_date(connection, cursor) -> list[str] | bool:
     try:
