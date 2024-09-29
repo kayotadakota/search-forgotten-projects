@@ -15,72 +15,11 @@ TOTAL_PAGES = None
 TITLES_NAMES = []
 
 
-def init_request(headers):
-    url = 'https://api.remanga.org/api/search/catalog/'
-    params = {
-        'content': 'manga',
-        'count': 30,
-        'count_chapters_gte': 0,
-        'count_chapters_lte': 0,
-        'issue_year_gte': 2024,
-        'ordering': '-id',
-        'page': 1,
-        'exclude_types': 4,
-        'exclude_types': 5,
-    }
-
-    try:
-        response = requests.get(url, params=params, headers=headers)
-        if response.status_code == 200:
-            logger.info('Initial data successfully received.')
-            data = response.json()
-
-            global TOTAL_PAGES
-            TOTAL_PAGES = data['props']['total_pages']
-
-            for title in data['content']:
-                TITLES_NAMES.append(title['dir'])
-
-        else:
-            logger.warning(f'Bad status code: {response.status_code}')
-    except Exception as ex:
-        logger.warning(f'Unexpected exception occured: {ex}')
-
-
-# async def get_catalogue(session, headers, page):
-#     url = 'https://api.remanga.org/api/search/catalog/'
-#     params = {
-#         'content': 'manga',
-#         'count': 30,
-#         'count_chapters_gte': 0,
-#         'count_chapters_lte': 0,
-#         'issue_year_gte': 2024,
-#         'ordering': '-id',
-#         'page': page,
-#         'exclude_types': 4,
-#         'exclude_types': 5,
-#     }
-
-#     try:
-#         async with session.get(url, params=params, headers=headers) as response:
-#             if response.status == 200:
-#                 logger.info(f'Data from page {params['page']} received.') 
-#                 data = await response.json()
-
-#                 for title in data['content']:
-#                     TITLES_NAMES.append(title['dir'])
-
-#             else:
-#                 logger.warning(f'Bad status code: {response.status}')
-#     except Exception as ex:
-#         logger.warning(f'Unexpected exception occured: {ex}')
-
-
-def get_titles_with_expired_immune_date(connection, cursor):
+def get_titles_with_expired_immune_date(connection, cursor) -> list[str] | bool:
     try:
         logger.info('Extracting data from the database...')
         response = cursor.execute('''
-            SELECT title_name FROM Titles WHERE immune_date = date('now');
+            SELECT title_name FROM Titles WHERE immune_date < date('now');
         ''')
         titles = [title[0] for title in response.fetchall()]
 
@@ -99,9 +38,10 @@ def get_titles_with_expired_immune_date(connection, cursor):
 def delete_from_db(connection, cursor, titles: list[str]) -> None:
     try:
         logger.info('Deleting from database...')
-        cursor.executemany(f'''
-            DELETE FROM Titles WHERE title_name = ?
-        ''', titles)
+        for title in titles:
+            cursor.execute(f'''
+                DELETE FROM Titles WHERE title_name = '{title}';
+            ''')
         connection.commit()
     except Exception as ex:
         logger.warning(f'Unexpected error has occured: {ex}')
@@ -138,12 +78,6 @@ def insert_into_db(connection, cursor, data: list[tuple]) -> None:
 
 def get_title_info(session: Session, headers: dict, title_name: str) -> tuple | bool:
     url = 'https://api.remanga.org/api/titles/'
-    # info = {
-    #     'title_name': title_name,
-    #     'total_bookmarks': 0,
-    #     'immune_date': None,
-    #     'is_valid': True
-    # }
 
     try:
         response = session.get(f'{url}{title_name}', headers=headers)
@@ -154,12 +88,11 @@ def get_title_info(session: Session, headers: dict, title_name: str) -> tuple | 
                 today = date.today()
                 target = date.fromisoformat(data.get('content').get('branches')[0].get('immune_date')[:10])
 
-                if today < target:
-                    # info['total_bookmarks'] = data.get('content').get('count_bookmarks')
-                    # info['immune_date'] = target.isoformat()
+                if today <= target:
                     total_bookmarks = data.get('content').get('count_bookmarks')
                     immune_date = target.isoformat()
                     logger.info(f'Data for {title_name} has been successfully received.')
+                    return (title_name, total_bookmarks, immune_date)
                 else:
                     return False
             else:
@@ -168,8 +101,6 @@ def get_title_info(session: Session, headers: dict, title_name: str) -> tuple | 
             logger.warning(f'Bad status code: {response.status_code}')
     except Exception as ex:
         logger.warning(f'Unexpected error has occured: {ex}')
-    else:
-      return (title_name, total_bookmarks, immune_date)
         
 
 def get_catalogue(session: Session, headers: dict, page: int) -> list[dict]:
@@ -206,35 +137,19 @@ def get_catalogue(session: Session, headers: dict, page: int) -> list[dict]:
         return output_list
 
 
-async def main():
-
-    async with aiohttp.ClientSession() as session:
-
-        page = 1
-        titles = await get_catalogue(session, GET_CATALOGUE_HEADERS, page)
-
-        tasks = []
-
-        tasks = [get_catalogue(session, GET_CATALOGUE_HEADERS, page) for page in range(2, TOTAL_PAGES + 1)]
-        await asyncio.gather(*tasks)
-
-    for title in TITLES_NAMES:
-        print(title)
-
-
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    request_queue = []
 
     connection = sqlite3.connect('database/titles_info.db')
     cursor = connection.cursor()
     assert cursor.connection, 'Failed to connect to the database.'
 
-    titles = fetch_all_from_db(cursor)
+    tracked_titles = fetch_all_from_db(cursor)
+    debut = get_titles_with_expired_immune_date(connection, cursor)
+    worth_to_take = []
 
     session = Session()
     titles_info = []
-    for_update = []
     flag = True
     
     for page in range(1, 5):
@@ -242,7 +157,7 @@ if __name__ == '__main__':
             catalogue = get_catalogue(session, GET_CATALOGUE_HEADERS, page)
             for title in catalogue:
 
-                if title in titles:
+                if title in tracked_titles:
                     continue
 
                 result = get_title_info(session, GET_CATALOGUE_HEADERS, title)
@@ -256,12 +171,20 @@ if __name__ == '__main__':
     if titles_info:
         insert_into_db(connection, cursor, titles_info)
 
-    print(titles_info)
-    print(len(titles_info))
-    print(get_titles_with_expired_immune_date(connection, cursor))
+    if debut:
+        for title in debut:
+            info = get_title_info(session, GET_CATALOGUE_HEADERS, title)
+
+            if info[1] > 500:
+                # Add title's name to the output if the count of bookmarks is greater than 500 
+                worth_to_take.append(info[0])
+
     connection.close()
     session.close()
 
-    #init_request(GET_CATALOGUE_HEADERS)
+    if worth_to_take:
+        print(*worth_to_take, sep='\n')
     
-    #asyncio.run(main())
+    else:
+        print('No titles worth taking have been found.')
+    
