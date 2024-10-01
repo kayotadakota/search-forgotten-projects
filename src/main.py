@@ -169,10 +169,12 @@ if __name__ == '__main__':
     if debut:
         for title in debut:
             info = get_title_info(session, REQUEST_HEADERS, title)
-
-            if info[1] > 500:
-                # Add title's name to the output if the count of bookmarks is greater than 500 
-                worth_to_take.append(info[0])
+            if info:
+                if info[1] > 500:
+                    # Add title's name to the output if the count of bookmarks is greater than 500 
+                    worth_to_take.append(info[0])
+                else:
+                    print(f'{info[0]} has {info[1]} total bookmarks.')
 
     connection.close()
     session.close()
