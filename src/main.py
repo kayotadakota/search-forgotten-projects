@@ -96,7 +96,37 @@ def get_title_info(session: Session, headers: dict, title_name: str) -> tuple | 
             logger.warning(f'Bad status code: {response.status_code}')
     except Exception as ex:
         logger.warning(f'Unexpected error has occured: {ex}')
-        
+
+
+def check_before_delete(session: Session, headers: dict, title_name: str) -> tuple | bool:
+    url = 'https://api.remanga.org/api/titles/'
+
+    try:
+        response = session.get(f'{url}{title_name}', headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+
+            if data.get('content'):
+                today = date.today()
+                target = date.fromisoformat(data.get('content').get('branches')[0].get('immune_date')[:10])
+
+                if today > target:
+                    total_bookmarks = data.get('content').get('count_bookmarks')
+                    total_chapters = data.get('content').get('count_chapters')
+
+                    if int(total_chapters) == 0 and int(total_bookmarks) > 500:
+                        return (title_name, total_bookmarks)
+                    
+                    else:
+                        return False
+            else:
+                logger.warning(f'{data.get('msg')}')
+        else:
+            logger.warning(f'Bad status code: {response.status_code}')
+    except Exception as ex:
+        logger.warning(f'Unexpected error has occured: {ex}')
+               
+
 
 def get_catalogue(session: Session, headers: dict, page: int) -> list[dict]:
     url = 'https://api.remanga.org/api/search/catalog/'
@@ -168,13 +198,11 @@ if __name__ == '__main__':
 
     if debut:
         for title in debut:
-            info = get_title_info(session, REQUEST_HEADERS, title)
+            info = check_before_delete(session, REQUEST_HEADERS, title)
             if info:
-                if info[1] > 500:
-                    # Add title's name to the output if the count of bookmarks is greater than 500 
-                    worth_to_take.append(info[0])
-                else:
-                    print(f'{info[0]} has {info[1]} total bookmarks.')
+                worth_to_take.append(info[0])
+            else:
+                print(f'{info[0]} has {info[1]} total bookmarks.')
 
     connection.close()
     session.close()
