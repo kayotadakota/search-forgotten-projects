@@ -201,8 +201,6 @@ if __name__ == '__main__':
             info = check_before_delete(session, REQUEST_HEADERS, title)
             if info:
                 worth_to_take.append(info[0])
-            else:
-                print(f'{info[0]} has {info[1]} total bookmarks.')
 
     connection.close()
     session.close()
